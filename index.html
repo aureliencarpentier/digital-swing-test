@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Examen d'entrée - Digital Swing</title>
+    <style>
+      body {
+        margin: 0;
+      }
+      canvas {
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <script src="https://threejs.org/build/three.js"></script>
+    <script type="text/javascript" src="./js/dat.gui.min.js"></script>
+    <script>
+      var camera, scene, renderer, gui, curve;
+      var windowHalfX = window.innerWidth / 2;
+      var windowHalfY = window.innerHeight / 2;
+      var followPath = false;
+      var mouseX = 0;
+      var mouseY = 0;
+      var posIndex = 0;
+
+      init();
+      animate();
+
+      function init() {
+        // Scene
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xf0f0f0);
+
+        //Camera
+        camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 1, 10000);
+        scene.add(camera);
+
+        // Renderer
+        renderer = new THREE.WebGLRenderer({ antialiasing: true });
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.physicallyCorrectLights = true;
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.outputEncoding = THREE.sRGBEncoding;
+        //renderer.toneMapping = THREE.ReinhardToneMapping;
+        document.body.appendChild(renderer.domElement);
+
+        scene.add(new THREE.AmbientLight(0xf0f0f0, 0.1));
+
+        //Spotlight
+        var light = new THREE.SpotLight(0xffffff, 1.0);
+        light.castShadow = true; // default false
+        light.position.set(0, 50, 0);
+        light.angle = Math.PI * 0.2;
+        light.shadow.mapSize.width = 1024;
+        light.shadow.mapSize.height = 1024;
+        light.shadow.camera.near = 10;
+        light.shadow.camera.far = 200;
+        scene.add(light);
+
+        // var helper = new THREE.SpotLightHelper(light);
+        // scene.add(helper);
+
+        curve = new THREE.CatmullRomCurve3([
+          new THREE.Vector3(-20, 5, 0),
+          new THREE.Vector3(-10, 5, 2),
+          new THREE.Vector3(10, -10, 0),
+          new THREE.Vector3(20, 20, 0),
+          new THREE.Vector3(30, 20, 0),
+          new THREE.Vector3(35, -20, -5),
+          new THREE.Vector3(10, -25, 0),
+          new THREE.Vector3(5, -20, 0),
+          new THREE.Vector3(-10, -20, 0),
+          new THREE.Vector3(-30, -10, 2),
+          new THREE.Vector3(-25, 0, 0),
+          new THREE.Vector3(-20, 5, 0),
+        ]);
+
+        curve.castShadow = true;
+
+        var geometry = new THREE.TubeBufferGeometry(curve, 100, 0.5, 32, true);
+        var material = new THREE.MeshLambertMaterial({ color: 0xff00ff });
+        var curveObject = new THREE.Mesh(geometry, material);
+        curveObject.castShadow = true;
+        curveObject.receiveShadow = true;
+
+        scene.add(curveObject);
+
+        // Plane
+        var geometryPlane = new THREE.PlaneBufferGeometry(2000, 2000, 32, 32);
+        var materialPlane = new THREE.MeshPhongMaterial({
+          color: 0xf0f0f0,
+          dithering: true,
+        });
+
+        var meshPlane = new THREE.Mesh(geometryPlane, materialPlane);
+        meshPlane.receiveShadow = true;
+        meshPlane.rotation.x = -Math.PI / 2.0;
+        meshPlane.position.set(20, -30, 0);
+        scene.add(meshPlane);
+
+        // GUI
+        var guiParams = function () {
+          this.suivreForme = false;
+        };
+        gui = new dat.GUI({ width: 300 });
+        var folderCamera = gui.addFolder('Camera');
+        folderCamera.add(new guiParams(), 'suivreForme').onChange(function () {
+          followPath = !followPath;
+          console.log(followPath);
+        });
+        folderCamera.open();
+        gui.open();
+
+        document.addEventListener('mousemove', moveCameraPosition);
+      }
+
+      function animate() {
+        requestAnimationFrame(animate);
+
+        render();
+      }
+
+      function render() {
+        var myX = mouseX * 0.05;
+        var myY = -mouseY * 0.05;
+
+        if (followPath) {
+          posIndex++;
+          if (posIndex > 3000) {
+            posIndex = 0;
+          }
+          var camPos = curve.getPoint(posIndex / 3000);
+          var camPosNext = curve.getPoint((posIndex + 1) / 3000);
+          var camRot = curve.getTangent(posIndex / 3000);
+          camera.rotation.set(camRot.x, camRot.y, camRot.z);
+          camera.position.set(camPos.x, camPos.y, camPos.z);
+
+          camera.lookAt(camPosNext.x, camPosNext.y + myY * 0.001, camPosNext.z + myX * 0.001);
+        } else {
+          posIndex = 0;
+          camera.position.set(50, 0, 100);
+          camera.lookAt(myX, myY, 0);
+        }
+
+        renderer.render(scene, camera);
+      }
+
+      function moveCameraPosition(event) {
+        mouseX = event.clientX - windowHalfX;
+        mouseY = event.clientY - windowHalfY;
+      }
+    </script>
+  </body>
+</html>
