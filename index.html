@@ -16,8 +16,38 @@
   <body>
     <script src="https://threejs.org/build/three.js"></script>
     <script type="text/javascript" src="./js/dat.gui.min.js"></script>
+    <script type="x-shader/x-vertex" id="vertexShader">
+      attribute float size;
+
+      varying vec3 vColor;
+
+      void main() {
+
+      	vColor = color;
+
+      	vec4 mvPosition = modelViewMatrix * vec4( position, 1.0 );
+
+      	gl_PointSize = size * ( 300.0 / -mvPosition.z );
+
+      	gl_Position = projectionMatrix * mvPosition;
+
+      }
+    </script>
+    <script type="x-shader/x-fragment" id="fragmentShader">
+      uniform sampler2D pointTexture;
+
+      varying vec3 vColor;
+
+      void main() {
+
+      	gl_FragColor = vec4( vColor, 1.0 );
+
+      	gl_FragColor = gl_FragColor * texture2D( pointTexture, gl_PointCoord );
+
+      }
+    </script>
     <script>
-      var camera, scene, renderer, gui, curve;
+      var camera, scene, renderer, gui, curve, clock;
       var windowHalfX = window.innerWidth / 2;
       var windowHalfY = window.innerHeight / 2;
       var followPath = false;
@@ -25,17 +55,117 @@
       var mouseY = 0;
       var posIndex = 0;
 
+      var particleSystem, uniformsParticle, geometryParticles;
+      var particles = 3000;
+
+      // SHADERS
+      var vShader = `
+          varying vec2 vUv;
+          uniform float u_time;
+
+          void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+      `;
+
+      var fShader = `
+          #define PI 3.1415926
+          #define TWO_PI PI*2.
+
+          uniform vec3 color1;
+          uniform vec3 color2;
+          uniform vec2 mousePosition;
+          uniform vec2 resolution;
+
+          varying vec2 vUv;
+          uniform float u_time;
+
+          void main() {
+
+            vec2 uv = vUv * 2. - 1.;
+            vec2 distance_souris = (mousePosition.xy - (gl_FragCoord.xy / resolution.xy));
+
+            gl_FragColor = vec4(mix(color1, color2, length(distance_souris)), 1.0);
+          }
+      `;
+
+      var uniforms = {
+        u_time: { value: 0.0 },
+        color1: {
+          value: new THREE.Color("purple"),
+        },
+        color2: {
+          value: new THREE.Color("red"),
+        },
+        resolution: {
+          value: new THREE.Vector2(),
+        },
+        mousePosition: {
+          value: new THREE.Vector2(0, 0),
+        },
+      };
+
+      uniformsParticle = {
+        pointTexture: {
+          value: new THREE.TextureLoader().load("textures/spark1.png"),
+        },
+      };
+
+      var shaderParticlesMaterial = new THREE.ShaderMaterial({
+        uniforms: uniformsParticle,
+        vertexShader: document.getElementById("vertexShader").textContent,
+        fragmentShader: document.getElementById("fragmentShader").textContent,
+
+        blending: THREE.AdditiveBlending,
+        depthTest: false,
+        transparent: true,
+        vertexColors: true,
+      });
+
+      var radius = 30;
+
+      geometryParticles = new THREE.BufferGeometry();
+
+      var positions = [];
+      var colors = [];
+      var sizes = [];
+
+      for (var i = 0; i < particles; i++) {
+        positions.push(Math.cos(Math.PI + i) * radius);
+        positions.push(Math.sin(Math.PI + i) * radius);
+        positions.push(0);
+        colors.push(1.0, 1.0, 1.0);
+
+        sizes.push(20);
+      }
+
+      geometryParticles.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+      geometryParticles.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+      geometryParticles.setAttribute(
+        "size",
+        new THREE.Float32BufferAttribute(sizes, 1).setUsage(THREE.DynamicDrawUsage)
+      );
+
+      particleSystem = new THREE.Points(geometryParticles, shaderParticlesMaterial);
+
       init();
       animate();
 
       function init() {
+        uniforms.resolution.value.x = window.innerWidth;
+        uniforms.resolution.value.y = window.innerHeight;
+        // CLOCK
+        clock = new THREE.Clock();
+
         // Scene
         scene = new THREE.Scene();
         scene.background = new THREE.Color(0xf0f0f0);
 
         //Camera
-        camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 1, 10000);
+        camera = new THREE.PerspectiveCamera(30, window.innerWidth / window.innerHeight, 1, 10000);
         scene.add(camera);
+        scene.add(particleSystem);
 
         // Renderer
         renderer = new THREE.WebGLRenderer({ antialiasing: true });
@@ -48,18 +178,23 @@
         //renderer.toneMapping = THREE.ReinhardToneMapping;
         document.body.appendChild(renderer.domElement);
 
-        scene.add(new THREE.AmbientLight(0xf0f0f0, 0.1));
+        scene.add(new THREE.AmbientLight(0xf0f0f0, 1.0));
 
-        //Spotlight
-        var light = new THREE.SpotLight(0xffffff, 1.0);
-        light.castShadow = true; // default false
-        light.position.set(0, 50, 0);
-        light.angle = Math.PI * 0.2;
-        light.shadow.mapSize.width = 1024;
-        light.shadow.mapSize.height = 1024;
-        light.shadow.camera.near = 10;
-        light.shadow.camera.far = 200;
-        scene.add(light);
+        // //Spotlight
+        // var light = new THREE.SpotLight(0xffffff, 1.0);
+        // light.castShadow = true; // default false
+        // light.position.set(0, 50, 0);
+        // light.angle = Math.PI * 0.2;
+        // light.shadow.mapSize.width = 1024;
+        // light.shadow.mapSize.height = 1024;
+        // light.shadow.camera.near = 10;
+        // light.shadow.camera.far = 200;
+        // scene.add(light);
+
+        var directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+        directionalLight.position.set(100, 350, 250);
+        directionalLight.castShadow = true;
+        scene.add(directionalLight);
 
         // var helper = new THREE.SpotLightHelper(light);
         // scene.add(helper);
@@ -82,8 +217,16 @@
         curve.castShadow = true;
 
         var geometry = new THREE.TubeBufferGeometry(curve, 100, 0.5, 32, true);
+        geometry.computeBoundingBox();
         var material = new THREE.MeshLambertMaterial({ color: 0xff00ff });
-        var curveObject = new THREE.Mesh(geometry, material);
+
+        var shaderMaterial = new THREE.ShaderMaterial({
+          uniforms: uniforms,
+          vertexShader: vShader,
+          fragmentShader: fShader,
+        });
+
+        var curveObject = new THREE.Mesh(geometry, shaderMaterial);
         curveObject.castShadow = true;
         curveObject.receiveShadow = true;
 
@@ -91,9 +234,10 @@
 
         // Plane
         var geometryPlane = new THREE.PlaneBufferGeometry(2000, 2000, 32, 32);
-        var materialPlane = new THREE.MeshPhongMaterial({
+        var materialPlane = new THREE.MeshStandardMaterial({
           color: 0xf0f0f0,
           dithering: true,
+          wireframe: true,
         });
 
         var meshPlane = new THREE.Mesh(geometryPlane, materialPlane);
@@ -107,18 +251,20 @@
           this.suivreForme = false;
         };
         gui = new dat.GUI({ width: 300 });
-        var folderCamera = gui.addFolder('Camera');
-        folderCamera.add(new guiParams(), 'suivreForme').onChange(function () {
+        var folderCamera = gui.addFolder("Camera");
+        folderCamera.add(new guiParams(), "suivreForme").onChange(function () {
           followPath = !followPath;
           console.log(followPath);
         });
         folderCamera.open();
         gui.open();
 
-        document.addEventListener('mousemove', moveCameraPosition);
+        document.addEventListener("mousemove", moveCameraPosition);
       }
 
       function animate() {
+        uniforms.u_time.value = clock.getElapsedTime();
+        //console.log("clock", uniforms.u_time.value)
         requestAnimationFrame(animate);
 
         render();
@@ -146,12 +292,39 @@
           camera.lookAt(myX, myY, 0);
         }
 
+        //Particles
+        var time = clock.getElapsedTime();
+        var positions = geometryParticles.attributes.position.array;
+        var sizes = geometryParticles.attributes.size.array;
+        //console.log(positions);
+
+        for (var i = 0; i < particles * 3; i += 3) {
+          positions[i] += (Math.random() * 1) - 0.5;
+          positions[i+1] += (Math.random() * 1) - 0.5;
+
+        }
+
+        for (var i = 0; i < particles; i++) {
+          sizes[i] = 3 * (1 + Math.sin((0.1 * i * Date.now()) / 100000));
+        }
+
+        geometryParticles.attributes.position.needsUpdate = true;
+        geometryParticles.attributes.size.needsUpdate = true;
+
+
         renderer.render(scene, camera);
       }
 
       function moveCameraPosition(event) {
-        mouseX = event.clientX - windowHalfX;
-        mouseY = event.clientY - windowHalfY;
+        //mouseX = event.clientX - windowHalfX;
+        //mouseY = event.clientY - windowHalfY;
+
+        uniforms.mousePosition.value = new THREE.Vector2(
+          event.clientX / window.innerWidth,
+          event.clientY / window.innerHeight
+        );
+
+        //console.log(uniforms.mousePosition.value.y);
       }
     </script>
   </body>
